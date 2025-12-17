@@ -198,10 +198,6 @@ curl -N -X GET "http://localhost:8080/api/client/sensors?sensorId=1&limit=3"
 curl -X GET "http://localhost:8080/actuator/health"
 ```
 
-## Автор
-
-Лабораторная работа №2 по реактивному программированию на Java
-
 ## Лицензия
 
 MIT
