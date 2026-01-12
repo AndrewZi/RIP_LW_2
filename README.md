@@ -255,10 +255,6 @@ curl -X GET "http://localhost:8080/actuator/health"
 curl -X GET "http://localhost:8081/actuator/health"
 ```
 
-## Автор
-
-Лабораторная работа №2 по реактивному программированию на Java
-
 ## Лицензия
 
 MIT
