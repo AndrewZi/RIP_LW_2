@@ -5,45 +5,69 @@ services:
     image: postgres:16-alpine
     container_name: sensor-postgres
     environment:
-      POSTGRES_DB: sensordb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME:-sensordb}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
       - "9432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d sensordb"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-sensordb}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - sensor-network
 
-  app:
+  # Service B - Sensor Data Generator Server
+  service-b:
     build:
-      context: .
+      context: ./service-b
       dockerfile: Dockerfile
-    container_name: sensor-app
+    container_name: sensor-server
     environment:
+      SERVER_PORT: 8080
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: sensordb
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      SERVER_PORT: 8080
-      SENSOR_SERVER_URL: http://localhost:8080
+      DB_NAME: ${DB_NAME:-sensordb}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-default}
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+    networks:
+      - sensor-network
+    restart: unless-stopped
+
+  # Service A - Sensor Data Client
+  service-a:
+    build:
+      context: ./service-a
+      dockerfile: Dockerfile
+    container_name: sensor-client
+    environment:
+      SERVER_PORT: 8080
+      SENSOR_SERVER_URL: http://service-b:8080
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-default}
+    ports:
+      - "8080:8080"
+    depends_on:
+      service-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - sensor-network
     restart: unless-stopped

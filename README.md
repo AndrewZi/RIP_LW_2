@@ -1,6 +1,30 @@
-# Sensor Reactive System
+# Sensor Reactive System - Microservices Architecture
 
-Полнофункциональный Spring Boot проект на Java с реактивным программированием, использующий WebFlux для потоковой обработки данных датчиков.
+Полнофункциональная микросервисная система на Spring Boot с реактивным программированием. Две независимые Services (Client и Server) работают как отдельные Docker контейнеры и взаимодействуют через REST API.
+
+## Архитектура
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Docker Network                     │
+│                                                       │
+│  ┌──────────────────┐    ┌────────────────────┐    │
+│  │  Service A       │    │   Service B        │    │
+│  │  (Client)        │    │   (Server)         │    │
+│  │  Port: 8080      │───│   Port: 8081       │    │
+│  │ /api/client/*    │    │ /api/sensors/*     │    │
+│  └──────────────────┘    │                    │    │
+│                          │ Generates Data     │    │
+│                          └────────────────────┘    │
+│                                    │                │
+│                                    ▼                │
+│                          ┌─────────────────┐       │
+│                          │  PostgreSQL     │       │
+│                          │  Port: 5432     │       │
+│                          └─────────────────┘       │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
 
 ## Технический стек
 
@@ -17,15 +41,20 @@
 
 ## Быстрый старт
 
-### С использованием Docker (Рекомендуется)
+### С использованием Docker Compose (Рекомендуется)
 
 ```bash
-# Построить Docker образ и запустить контейнеры
+# Построить Docker образы для обоих сервисов и запустить контейнеры
 make docker-build
 make docker-up
 
-# Просмотреть логи
+# Просмотреть логи всех сервисов
 make logs
+
+# Просмотреть логи конкретного сервиса
+make logs-a      # Service A (Client)
+make logs-b      # Service B (Server)
+make logs-db     # PostgreSQL
 
 # Остановить контейнеры
 make docker-down
@@ -36,25 +65,30 @@ make docker-down
 | Команда | Описание |
 |---------|---------|
 | `make help` | Показать все доступные команды |
-| `make build` | Собрать Maven проект (compile и package) |
+| `make build` | Собрать оба сервиса (Service A и Service B) |
+| `make build-service-a` | Собрать только Service A (Client) |
+| `make build-service-b` | Собрать только Service B (Server) |
 | `make clean` | Очистить build артефакты и Docker образы |
-| `make run` | Запустить приложение локально |
-| `make docker-build` | Построить Docker образ |
-| `make docker-up` | Запустить контейнеры с docker-compose |
+| `make docker-build` | Построить Docker образы для обоих сервисов |
+| `make docker-up` | Запустить все контейнеры (Service A, B, PostgreSQL) |
 | `make docker-down` | Остановить и удалить контейнеры |
-| `make docker-logs` | Просмотреть логи контейнера |
+| `make logs` | Просмотреть логи всех сервисов |
+| `make logs-a` | Просмотреть логи Service A (Client) |
+| `make logs-b` | Просмотреть логи Service B (Server) |
+| `make logs-db` | Просмотреть логи PostgreSQL |
 | `make ps` | Список запущенных контейнеров |
-| `make logs` | Просмотреть логи приложения |
-| `make health` | Проверить health статус приложения |
+| `make health` | Проверить health статус обоих сервисов |
+| `make test-endpoints` | Протестировать API endpoints |
 | `make reset-db` | Сбросить базу данных |
 
 ## API Endpoints
 
-### Service B (Server) - Потоковые данные датчиков
+### Service B (Server) - Генератор потока датчиков
+**Адрес:** `http://localhost:8081`
 
 #### Получить поток одного датчика
 ```bash
-curl -N "http://localhost:8080/api/sensors/stream?sensorId=1&limit=5"
+curl -N "http://localhost:8081/api/sensors/stream?sensorId=1&limit=5"
 ```
 
 **Параметры:**
@@ -70,19 +104,24 @@ curl -N "http://localhost:8080/api/sensors/stream?sensorId=1&limit=5"
 
 #### Получить поток нескольких датчиков
 ```bash
-curl -N "http://localhost:8080/api/sensors/stream/multi?sensorCount=3&limit=10"
+curl -N "http://localhost:8081/api/sensors/stream/multi?sensorCount=3&limit=10"
 ```
 
 **Параметры:**
 - `sensorCount` (Integer, опционально) - Количество датчиков для потока (по умолчанию 5)
 - `limit` (Integer, опционально) - Максимальное количество элементов на датчик (по умолчанию 20)
 
-### Service A (Client) - Клиентский доступ к потокам
+### Service A (Client) - API Gateway к Service B
+**Адрес:** `http://localhost:8080`
+
+Service A выступает как прокси/API Gateway и перенаправляет запросы к Service B с поддержкой retry логики.
 
 #### Получить поток через клиента (single sensor)
 ```bash
 curl -N "http://localhost:8080/api/client/sensors?sensorId=1&limit=5"
 ```
+
+Эта команда будет перенаправлена на Service B: `http://service-b:8080/api/sensors/stream?sensorId=1&limit=5`
 
 #### Получить поток через клиента (multiple sensors)
 ```bash
@@ -91,11 +130,17 @@ curl -N "http://localhost:8080/api/client/sensors/multi?sensorCount=3&limit=10"
 
 ## Примеры логов
 
-### Успешная инициализация приложения
+### Service B - Успешная инициализация сервера
 ```
-2024-12-17 20:15:30.123 [main] INFO  com.sensordata.SensorReactiveApplication - Starting SensorReactiveApplication
-2024-12-17 20:15:32.456 [main] INFO  com.sensordata.config.WebClientConfig - Creating WebClient with baseUrl=http://localhost:8080
-2024-12-17 20:15:33.789 [main] INFO  o.s.b.w.e.netty.NettyWebServer - Netty started on port(s): 8080
+2024-12-17 20:15:30.123 [main] INFO  com.sensordata.SensorServerApplication - Starting SensorServerApplication
+2024-12-17 20:15:32.456 [main] INFO  o.s.b.w.e.netty.NettyWebServer - Netty started on port(s): 8080
+```
+
+### Service A - Успешная инициализация клиента
+```
+2024-12-17 20:15:35.123 [main] INFO  com.sensordata.SensorClientApplication - Starting SensorClientApplication
+2024-12-17 20:15:37.456 [main] INFO  com.sensordata.config.WebClientConfig - Creating WebClient with baseUrl=http://service-b:8080
+2024-12-17 20:15:38.789 [main] INFO  o.s.b.w.e.netty.NettyWebServer - Netty started on port(s): 8080
 ```
 
 ### HTTP запрос через LoggingFilter
@@ -178,24 +223,36 @@ make logs
 
 ## Тестирование
 
-### Тест 1: Простой поток одного датчика
+Используйте команду `make test-endpoints` для автоматического тестирования, или вручную:
+
+### Тест 1: Service B - Простой поток одного датчика
 ```bash
-curl -N -X GET "http://localhost:8080/api/sensors/stream?sensorId=1&limit=3"
+curl -N -X GET "http://localhost:8081/api/sensors/stream?sensorId=1&limit=3"
 ```
 
-### Тест 2: Поток нескольких датчиков
+### Тест 2: Service B - Поток нескольких датчиков
 ```bash
-curl -N -X GET "http://localhost:8080/api/sensors/stream/multi?sensorCount=3&limit=5"
+curl -N -X GET "http://localhost:8081/api/sensors/stream/multi?sensorCount=3&limit=5"
 ```
 
-### Тест 3: Клиентский доступ
+### Тест 3: Service A - Клиентский доступ (Single Sensor)
 ```bash
 curl -N -X GET "http://localhost:8080/api/client/sensors?sensorId=1&limit=3"
 ```
 
-### Тест 4: Health check
+### Тест 4: Service A - Клиентский доступ (Multiple Sensors)
+```bash
+curl -N -X GET "http://localhost:8080/api/client/sensors/multi?sensorCount=3&limit=5"
+```
+
+### Тест 5: Service A - Health Check
 ```bash
 curl -X GET "http://localhost:8080/actuator/health"
+```
+
+### Тест 6: Service B - Health Check
+```bash
+curl -X GET "http://localhost:8081/actuator/health"
 ```
 
 ## Автор
